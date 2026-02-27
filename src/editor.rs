@@ -17,11 +17,10 @@ impl Editor {
                 Ok(Key(event)) => {
                     println!("{event:?} \r");
 
-                    if let Char(c) = event.code {
-                        if c == 'q' {
+                    if let Char(c) = event.code
+                        && c == 'q' {
                             break;
                         }
-                    }
                 }
 
                 Err(err) => println!("Error: {err}"),
