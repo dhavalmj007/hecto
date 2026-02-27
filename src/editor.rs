@@ -15,15 +15,12 @@ impl Editor {
         loop {
             match read() {
                 Ok(Key(event)) => {
-                    println!("{:?} \r", event);
+                    println!("{event:?} \r");
 
-                    match event.code {
-                        Char(c) => {
-                            if c == 'q' {
-                                break;
-                            }
+                    if let Char(c) = event.code {
+                        if c == 'q' {
+                            break;
                         }
-                        _ => (),
                     }
                 }
 
