@@ -2,7 +2,6 @@ use crossterm::cursor::{Hide, MoveTo, Show};
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType};
 use crossterm::{execute, queue};
-use std::fmt::Display;
 use std::io::{stdout, Error, Write};
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -84,7 +83,7 @@ impl Terminal {
         queue!(stdout(), Show)
     }
 
-    pub fn print(s: impl Display) -> Result<(), Error> {
+    pub fn print(s: &str) -> Result<(), Error> {
         queue!(stdout(), Print(s))
     }
 
