@@ -5,6 +5,18 @@ use crossterm::{execute, queue};
 use std::fmt::Display;
 use std::io::{stdout, Error, Write};
 
+#[derive(Debug, Copy, Clone, Default)]
+pub struct Position {
+    pub col: usize,
+    pub row: usize,
+}
+
+impl Position {
+    pub fn new(col: usize, row: usize) -> Self {
+        Position { col, row }
+    }
+}
+
 /// Represents the Terminal.
 /// Edge Case for platforms where `usize` < `u16`:
 /// Regardless of the actual size of the Terminal, this representation
@@ -19,12 +31,6 @@ pub struct Size {
     pub width: usize,
 }
 
-#[derive(Copy, Clone)]
-pub struct Position {
-    pub x: usize,
-    pub y: usize,
-}
-
 impl Terminal {
     pub fn initialize() -> Result<(), Error> {
         enable_raw_mode()?;
@@ -33,7 +39,10 @@ impl Terminal {
 
     pub fn terminate() -> Result<(), Error> {
         disable_raw_mode()?;
-        Self::clear_screen()
+        Self::clear_screen()?;
+        let position = Position::default();
+        Self::move_caret_to(position)?;
+        Ok(())
     }
 
     pub fn clear_screen() -> Result<(), Error> {
@@ -61,17 +70,17 @@ impl Terminal {
     /// Moves the cursor to the given Position.
     /// # Arguments
     /// * `Position` - the  `Position`to move the cursor to. Will be truncated to `u16::MAX` if bigger.
-    pub fn move_cursor_to(position: Position) -> Result<(), Error> {
+    pub fn move_caret_to(position: Position) -> Result<(), Error> {
         #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
-        queue!(stdout(), MoveTo(position.x as u16, position.y as u16))?;
+        queue!(stdout(), MoveTo(position.row as u16, position.col as u16))?;
         Ok(())
     }
 
-    pub fn hide_cursor() -> Result<(), Error> {
+    pub fn hide_caret() -> Result<(), Error> {
         queue!(stdout(), Hide)
     }
 
-    pub fn show_cursor() -> Result<(), Error> {
+    pub fn show_caret() -> Result<(), Error> {
         queue!(stdout(), Show)
     }
 

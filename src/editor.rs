@@ -1,43 +1,51 @@
 mod terminal;
 
+use std::cmp::min;
 use terminal::Terminal;
 
 use crate::editor::terminal::{Position, Size};
 use crossterm::event::Event::Key;
-use crossterm::event::KeyCode::Char;
-use crossterm::event::{read, Event, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::{execute, queue};
+use crossterm::event::KeyCode::{Char, Down, End, Home, Left, PageDown, PageUp, Right, Up};
+use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::queue;
 use crossterm::style::Print;
-use std::io::{stdout, Error, Write};
+use std::io::{stdout, Error};
+use crossterm::terminal::{Clear, ClearType};
 
 const NAME: &str = env!("CARGO_PKG_NAME");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Tracking location of caret on the document
+#[derive(Copy, Clone, Default)]
+struct Location {
+    x: usize,
+    y: usize,
+}
+
+impl Location {
+    fn new(x: usize, y: usize) -> Self {
+        Location { x, y }
+    }
+}
+
+/// Tracking position of caret on terminal
+#[derive(Default)]
 pub struct Editor {
     should_quite: bool,
-    position: Position,
+    location: Location,
 }
 
 impl Editor {
-    pub const fn default() -> Self {
-        Self {
-            should_quite: false,
-            position: Position { x: 0, y: 0 },
-        }
-    }
 
-    pub fn update_position(&mut self, x: usize, y: usize) {
-        self.position = Position { x, y };
-    }
-
-    pub fn run(&mut self) {
-        Terminal::initialize().unwrap();
+    pub fn run(&mut self) -> Result<(), Error> {
+        Terminal::initialize()?;
         let result = self.repl();
-        Terminal::terminate().unwrap();
-        result.unwrap();
+        Terminal::terminate()?;
+        result?;
+        Ok(())
     }
 
-    fn repl(&mut self) -> Result<(), std::io::Error> {
+    fn repl(&mut self) -> Result<(), Error> {
         self.refresh_screen()?;
         loop {
             if self.should_quite {
@@ -66,32 +74,53 @@ impl Editor {
                 Char(c) => {
                     let mut stdout = stdout();
                     queue!(stdout, Print(format!("{c}")))?;
-                    let position = Position {
-                        x: self.position.x + 1,
-                        y: self.position.y,
-                    };
-                    // Terminal::move_cursor_to(position)?;
-                    stdout.flush()?;
-                    self.update_position(position.x + 1, position.y);
+                }
+                Up | Down | Right | Left | Home | End | PageDown | PageUp => {
+                    self.move_caret(*code)?
                 }
                 _ => (),
             }
         }
+        Terminal::execute()?;
         Ok(())
     }
 
-    fn refresh_screen(&mut self) -> Result<(), std::io::Error> {
-        Terminal::hide_cursor()?;
+    fn move_caret(&mut self, code: KeyCode) -> Result<(), Error> {
+        let Location { mut x, mut y } = self.location;
+        let Size { height, width } = Terminal::size()?;
+        let cur_y = self.location.y;
+        let cur_x = self.location.x;
+        match code {
+            Up => x = cur_x.saturating_sub(1),
+            Down => x = min(height.saturating_sub(1), cur_x.saturating_add(1)),
+            Right => y = min(width.saturating_sub(1), cur_y.saturating_add(1)),
+            Left => y = cur_y.saturating_sub(1),
+            Home => y = 0,
+            End => y = width.saturating_sub(1),
+            PageUp => x = 0,
+            PageDown => x = height.saturating_sub(1),
+            _ => (),
+        }
+        let location = Location::new(x, y);
+        let position = Position::new(x, y);
+        self.location = location;
+        Terminal::move_caret_to(position)?;
+        Terminal::execute()?;
+
+        Ok(())
+    }
+
+    fn refresh_screen(&mut self) -> Result<(), Error> {
+        Terminal::hide_caret()?;
         if self.should_quite {
             Terminal::clear_screen()?;
             print!("Goodbye.\r\n");
         } else {
             Self::draw_rows()?;
-            let position = Position { x: 0, y: 0 };
-            Terminal::move_cursor_to(position)?;
-            self.position = position;
+            let position = Position::default();
+            Terminal::move_caret_to(position)?;
         }
-        Terminal::show_cursor()?;
+        Terminal::show_caret()?;
         Terminal::execute()?;
         Ok(())
     }
