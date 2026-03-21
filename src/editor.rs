@@ -10,7 +10,6 @@ use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use crossterm::queue;
 use crossterm::style::Print;
 use std::io::{stdout, Error};
-use crossterm::terminal::{Clear, ClearType};
 
 const NAME: &str = env!("CARGO_PKG_NAME");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -36,7 +35,6 @@ pub struct Editor {
 }
 
 impl Editor {
-
     pub fn run(&mut self) -> Result<(), Error> {
         Terminal::initialize()?;
         let result = self.repl();
@@ -76,7 +74,7 @@ impl Editor {
                     queue!(stdout, Print(format!("{c}")))?;
                 }
                 Up | Down | Right | Left | Home | End | PageDown | PageUp => {
-                    self.move_caret(*code)?
+                    self.move_caret(*code)?;
                 }
                 _ => (),
             }
