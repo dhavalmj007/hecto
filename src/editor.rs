@@ -1,18 +1,17 @@
 mod terminal;
+mod view;
 
 use std::cmp::min;
 use terminal::Terminal;
 
 use crate::editor::terminal::{Position, Size};
+use crate::editor::view::View;
 use crossterm::event::Event::Key;
 use crossterm::event::KeyCode::{Char, Down, End, Home, Left, PageDown, PageUp, Right, Up};
 use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::queue;
 use crossterm::style::Print;
 use std::io::{stdout, Error};
-
-const NAME: &str = env!("CARGO_PKG_NAME");
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Tracking location of caret on the document
 #[derive(Copy, Clone, Default)]
@@ -32,15 +31,25 @@ impl Location {
 pub struct Editor {
     should_quite: bool,
     location: Location,
+    view: View,
 }
 
 impl Editor {
     pub fn run(&mut self) -> Result<(), Error> {
+        self.view.needs_redraw = true;
         Terminal::initialize()?;
+        self.handle_args();
         let result = self.repl();
         Terminal::terminate()?;
         result?;
         Ok(())
+    }
+
+    fn handle_args(&mut self) {
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(filename) = args.get(1) {
+            self.view.load(filename);
+        }
     }
 
     fn repl(&mut self) -> Result<(), Error> {
@@ -79,6 +88,13 @@ impl Editor {
                 _ => (),
             }
         }
+
+        if let Some((..)) = event.as_resize_event() {
+            self.view.needs_redraw = true;
+            self.view.render()?;
+            let position = Position::default();
+            Terminal::move_caret_to(position)?;
+        }
         Terminal::execute()?;
         Ok(())
     }
@@ -114,46 +130,15 @@ impl Editor {
             Terminal::clear_screen()?;
             print!("Goodbye.\r\n");
         } else {
-            Self::draw_rows()?;
-            let position = Position::default();
-            Terminal::move_caret_to(position)?;
+            if self.view.needs_redraw {
+                self.view.render()?;
+                let position = Position::default();
+                Terminal::move_caret_to(position)?;
+                self.view.needs_redraw = false;
+            }
         }
         Terminal::show_caret()?;
         Terminal::execute()?;
-        Ok(())
-    }
-
-    fn draw_welcome_msg() -> Result<(), Error> {
-        let mut welcome_msg = format!("{NAME} editor -- version {VERSION}");
-        let width = Terminal::size()?.width;
-        let len = welcome_msg.len();
-        #[allow(clippy::integer_division)]
-        let padding = (width.saturating_sub(len)) / 2;
-        let space = " ".repeat(padding.saturating_sub(1)); // account for the ~
-        welcome_msg = format!("~{space}{welcome_msg}");
-        welcome_msg.truncate(width);
-        Terminal::print(welcome_msg)
-    }
-
-    fn draw_empty_row() -> Result<(), Error> {
-        Terminal::print("~")
-    }
-
-    fn draw_rows() -> Result<(), std::io::Error> {
-        let Size { height, .. } = Terminal::size()?;
-        for current_row in 0..height {
-            Terminal::clear_line()?;
-            #[allow(clippy::integer_division)]
-            if current_row == height / 3 {
-                Self::draw_welcome_msg()?;
-            } else {
-                Self::draw_empty_row()?;
-            }
-            if current_row.saturating_add(1) < height {
-                Terminal::print("\r\n")?;
-            }
-        }
-
         Ok(())
     }
 }
