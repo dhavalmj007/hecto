@@ -24,7 +24,7 @@ impl Position {
 /// And should you attempt to set the cursor out of these bounds, it will also be truncated.
 pub struct Terminal {}
 
-#[derive(Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 pub struct Size {
     pub height: usize,
     pub width: usize,

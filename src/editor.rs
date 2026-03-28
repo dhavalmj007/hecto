@@ -6,8 +6,7 @@ use terminal::Terminal;
 
 use crate::editor::terminal::{Position, Size};
 use crate::editor::view::View;
-use crossterm::event::Event::Key;
-use crossterm::event::KeyCode::{Char, Down, End, Home, Left, PageDown, PageUp, Right, Up};
+use crossterm::event::KeyCode::{Down, End, Home, Left, PageDown, PageUp, Right, Up};
 use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::queue;
 use crossterm::style::Print;
@@ -36,7 +35,6 @@ pub struct Editor {
 
 impl Editor {
     pub fn run(&mut self) -> Result<(), Error> {
-        self.view.needs_redraw = true;
         Terminal::initialize()?;
         self.handle_args();
         let result = self.repl();
@@ -60,40 +58,42 @@ impl Editor {
             }
 
             let event = read()?;
-            self.evaluate_event(&event)?;
+            self.evaluate_event(event)?;
         }
 
         Ok(())
     }
 
-    fn evaluate_event(&mut self, event: &Event) -> Result<(), Error> {
-        if let Key(KeyEvent {
-            code,
-            modifiers,
-            state: _state,
-            kind: KeyEventKind::Press,
-        }) = event
-        {
-            match code {
-                Char('q') if *modifiers == KeyModifiers::CONTROL => {
+    fn evaluate_event(&mut self, event: Event) -> Result<(), Error> {
+        match event {
+            Event::Key(KeyEvent {
+                code,
+                modifiers,
+                kind: KeyEventKind::Press,
+                ..
+            }) => match (code, modifiers) {
+                (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
                     self.should_quite = true;
                 }
-                Char(c) => {
+                (KeyCode::Char(c), _) => {
                     let mut stdout = stdout();
                     queue!(stdout, Print(format!("{c}")))?;
                 }
-                Up | Down | Right | Left | Home | End | PageDown | PageUp => {
-                    self.move_caret(*code)?;
+                (Up | Down | Right | Left | Home | End | PageDown | PageUp, _) => {
+                    self.move_caret(code)?;
                 }
-                _ => (),
-            }
-        }
+                _ => {}
+            },
+            Event::Resize(width_u16, height_u16) => {
+                #[allow(clippy::as_conversions)]
+                let height = height_u16 as usize;
 
-        if let Some((..)) = event.as_resize_event() {
-            self.view.needs_redraw = true;
-            self.view.render()?;
-            let position = Position::default();
-            Terminal::move_caret_to(position)?;
+                #[allow(clippy::as_conversions)]
+                let width = width_u16 as usize;
+
+                self.view.resize(Size { height, width });
+            }
+            _ => {}
         }
         Terminal::execute()?;
         Ok(())
@@ -126,16 +126,14 @@ impl Editor {
 
     fn refresh_screen(&mut self) -> Result<(), Error> {
         Terminal::hide_caret()?;
+        Terminal::move_caret_to(Position::default())?;
         if self.should_quite {
             Terminal::clear_screen()?;
             print!("Goodbye.\r\n");
         } else {
-            if self.view.needs_redraw {
-                self.view.render()?;
-                let position = Position::default();
-                Terminal::move_caret_to(position)?;
-                self.view.needs_redraw = false;
-            }
+            self.view.render()?;
+            let position = Position::new(self.location.x, self.location.y);
+            Terminal::move_caret_to(position)?;
         }
         Terminal::show_caret()?;
         Terminal::execute()?;
