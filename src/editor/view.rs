@@ -1,5 +1,5 @@
 mod buffer;
-use crate::editor::terminal::{Position, Size, Terminal};
+use crate::editor::{Location, terminal::{Position, Size, Terminal}};
 use buffer::Buffer;
 use std::io::Error;
 
@@ -51,7 +51,7 @@ impl View {
     }
 
     fn render_line(at: usize, line_text: &str) -> Result<(), Error> {
-        Terminal::move_caret_to(Position { col: at, row: 0 })?;
+        Terminal::move_caret_to(Position { row: at, col: 0 })?;
         Terminal::clear_line()?;
         Terminal::print(line_text)?;
         Ok(())
@@ -86,6 +86,22 @@ impl View {
     pub fn resize(&mut self, to: Size) {
         self.size = to;
         self.needs_redraw = true;
+    }
+
+    pub fn delete(&mut self, location: super::Location) -> () {
+        self.buffer.delete_backward(location);
+    }
+    
+    pub fn insert(&mut self, location: Location, c: char) -> () {
+        self.buffer.insert(location, c);
+    }
+
+    pub fn set_redraw(&mut self, redraw: bool) {
+        self.needs_redraw = redraw;
+    }
+    
+    pub fn line_len(&self, at: usize) -> Option<usize> {
+        self.buffer.line_len(at)
     }
 }
 

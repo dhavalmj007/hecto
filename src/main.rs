@@ -2,5 +2,11 @@ mod editor;
 use editor::Editor;
 
 fn main() {
-    Editor::default().run().unwrap();
+    if let Ok(mut editor) = Editor::new() {
+        editor.run().unwrap();
+    } else {
+        println!("Error in the Editor");
+    }
+
+    println!("Goodbye.");
 }

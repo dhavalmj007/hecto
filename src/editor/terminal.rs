@@ -1,8 +1,12 @@
 use crossterm::cursor::{Hide, MoveTo, Show};
 use crossterm::style::Print;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, size, Clear, ClearType, EnterAlternateScreen,
+    LeaveAlternateScreen,
+};
 use crossterm::{execute, queue};
 use std::io::{stdout, Error, Write};
+use std::panic::take_hook;
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Position {
@@ -31,16 +35,21 @@ pub struct Size {
 }
 
 impl Terminal {
-    pub fn initialize() -> Result<(), Error> {
+    pub fn new() -> Result<Self, Error> {
+        let current_hook = take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            Self::terminate().unwrap();
+            current_hook(panic_info);
+        }));
         enable_raw_mode()?;
-        Self::clear_screen()
+        execute!(stdout(), EnterAlternateScreen)?;
+
+        Ok(Self {})
     }
 
     pub fn terminate() -> Result<(), Error> {
         disable_raw_mode()?;
-        Self::clear_screen()?;
-        let position = Position::default();
-        Self::move_caret_to(position)?;
+        execute!(stdout(), LeaveAlternateScreen)?;
         Ok(())
     }
 
@@ -68,10 +77,10 @@ impl Terminal {
 
     /// Moves the cursor to the given Position.
     /// # Arguments
-    /// * `Position` - the  `Position`to move the cursor to. Will be truncated to `u16::MAX` if bigger.
+    /// * `Position` - the `Position` to move the cursor to. Will be truncated to `u16::MAX` if bigger.
     pub fn move_caret_to(position: Position) -> Result<(), Error> {
         #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
-        queue!(stdout(), MoveTo(position.row as u16, position.col as u16))?;
+        queue!(stdout(), MoveTo(position.col as u16, position.row as u16))?;
         Ok(())
     }
 
@@ -89,5 +98,11 @@ impl Terminal {
 
     pub fn execute() -> Result<(), Error> {
         stdout().flush()
+    }
+}
+
+impl Drop for Terminal {
+    fn drop(&mut self) {
+        let _ = Self::terminate();
     }
 }
