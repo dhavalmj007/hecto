@@ -8,6 +8,7 @@ use crossterm::{execute, queue};
 use std::io::{stdout, Error, Write};
 use std::panic::take_hook;
 
+/// Tracking position of caret on terminal
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Position {
     pub col: usize,
@@ -51,11 +52,6 @@ impl Terminal {
         disable_raw_mode()?;
         execute!(stdout(), LeaveAlternateScreen)?;
         Ok(())
-    }
-
-    pub fn clear_screen() -> Result<(), Error> {
-        let mut stdout = stdout();
-        execute!(stdout, Clear(ClearType::All))
     }
 
     pub fn clear_line() -> Result<(), Error> {

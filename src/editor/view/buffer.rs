@@ -1,6 +1,6 @@
 use std::{fs::read_to_string, io::Error};
 
-use crate::editor::Location;
+use crate::editor::view::Location;
 
 #[derive(Default)]
 pub struct Buffer {
@@ -21,27 +21,21 @@ impl Buffer {
         Ok(Self { lines: vec })
     }
 
-    pub fn delete_backward(&mut self, location: Location) -> () {
-        match self.lines.get_mut(location.y) {
-            Some(line) => {
-                if location.x < line.len() {
-                    line.remove(location.x);
-                }
-            }
-            None => {}
+    pub fn delete_backward(&mut self, location: Location) {
+        if let Some(line) = self.lines.get_mut(location.y)
+            && location.x < line.len()
+        {
+            line.remove(location.x);
         }
     }
 
     pub fn insert(&mut self, location: Location, c: char) {
-        match self.lines.get_mut(location.y) {
-            Some(line) => {
-                debug_assert!(location.x <= line.len(), "Location is out of bounds");
-                line.insert(location.x, c);
-            }
-            None => {
-                self.lines.push(String::new());
-                self.lines.last_mut().unwrap().insert(location.x, c);
-            }
+        if let Some(line) = self.lines.get_mut(location.y) {
+            debug_assert!(location.x <= line.len(), "Location is out of bounds");
+            line.insert(location.x, c);
+        } else {
+            self.lines.push(String::new());
+            self.lines.last_mut().unwrap().insert(location.x, c);
         }
     }
 
