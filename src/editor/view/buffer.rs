@@ -40,6 +40,22 @@ impl Buffer {
     }
 
     pub fn line_len(&self, at: usize) -> Option<usize> {
-        self.lines.get(at).map(|line| line.trim().len())
+        self.lines.get(at).map(|line| line.len())
+    }
+
+    pub fn join_line(&mut self, at: usize) {
+        if at + 1 >= self.lines.len() {
+            return;
+        }
+
+        let line = self.lines.remove(at + 1);
+        self.lines[at].push_str(&line);
+    }
+
+    pub fn split_line(&mut self, Location { x, y }: Location) {
+        if let Some(line) = self.lines.get_mut(y) {
+            let reminder = line.split_off(x);
+            self.lines.insert(y + 1, reminder);
+        }
     }
 }

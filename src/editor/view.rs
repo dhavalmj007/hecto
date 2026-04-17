@@ -1,8 +1,10 @@
 mod buffer;
+use crate::editor::editorcommand::Direction::{
+    self, Down, End, Home, Left, PageDown, PageUp, Right, Up,
+};
+use crate::editor::editorcommand::EditorCommand;
 use crate::editor::terminal::{Position, Size, Terminal};
 use buffer::Buffer;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyCode::{Down, End, Home, Left, PageDown, PageUp, Right, Up};
 use std::ops::DerefMut;
 use std::{io::Error, ops::Deref};
 
@@ -25,12 +27,12 @@ impl Location {
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 struct ScrollOffset(Location);
 
-impl ScrollOffset {
-    pub fn increment(&mut self, x: usize, y: usize) {
-        self.0.x = self.0.x.saturating_add(x);
-        self.0.y = self.0.y.saturating_add(y);
-    }
-}
+// impl ScrollOffset {
+//     pub fn increment(&mut self, x: usize, y: usize) {
+//         self.0.x = self.0.x.saturating_add(x);
+//         self.0.y = self.0.y.saturating_add(y);
+//     }
+// }
 
 impl Deref for ScrollOffset {
     type Target = Location;
@@ -149,29 +151,38 @@ impl View {
     //     unimplemented!()
     // }
 
-    pub fn caret_location(&self) -> Location {
-        self.location
-    }
+    // pub fn caret_location(&self) -> Location {
+    //     self.location
+    // }
 
     pub fn screen_position(&self) -> Position {
-        let col = self.location.x - self.scroll_offset.x;
-        let row = self.location.y - self.scroll_offset.y;
+        let col = self.location.x.saturating_sub(self.scroll_offset.x);
+        let row = self.location.y.saturating_sub(self.scroll_offset.y);
         Position::new(col, row)
     }
 
-    pub fn move_caret(&mut self, code: KeyCode) -> Result<(), Error> {
+    pub fn move_caret(&mut self, code: Direction) -> Result<(), Error> {
         let Location { mut x, mut y } = self.location;
-        let Size { height, width } = self.size;
+        let Size { height, .. } = self.size;
         match code {
-            Up => y = y.saturating_sub(1),
-            Down => y = y.saturating_add(1),
+            Up => {
+                y = y.saturating_sub(1);
+                if x > self.line_len(y).unwrap_or(0) {
+                    x = self.line_len(y).unwrap_or(0);
+                }
+            }
+            Down => {
+                y = y.saturating_add(1);
+                if x > self.line_len(y).unwrap_or(0) {
+                    x = self.line_len(y).unwrap_or(0);
+                }
+            }
             Right => x = x.saturating_add(1),
             Left => x = x.saturating_sub(1),
             Home => x = 0,
-            End => x = width.saturating_sub(1),
-            PageUp => y = y.saturating_sub(height - 1),
-            PageDown => y = y.saturating_add(height - 1),
-            _ => (),
+            End => x = self.buffer.line_len(y).unwrap_or(0),
+            PageUp => y = y.saturating_sub(height.saturating_sub(1)),
+            PageDown => y = y.saturating_add(height.saturating_sub(1)),
         }
         let location = Location::new(x, y);
         self.location = location;
@@ -192,32 +203,47 @@ impl View {
         self.location = Location { x: new_x, y: new_y };
         self.scroll_location_into_view();
         self.set_redraw(true);
-        self.render()?;
 
         Ok(())
     }
 
     pub fn handle_enter(&mut self) -> Result<(), Error> {
+        self.buffer.split_line(self.location);
         self.location.y = self.location.y.saturating_add(1);
         self.location.x = 0;
         self.scroll_location_into_view();
-        self.insert(self.location, '\r');
         self.set_redraw(true);
-        self.render()?;
         Ok(())
     }
 
     pub fn handle_backspace(&mut self) -> Result<(), Error> {
         if self.location.x == 0 && self.location.y > 0 {
+            self.location.x = self
+                .line_len(self.location.y.saturating_sub(1))
+                .unwrap_or(0);
+            self.buffer.join_line(self.location.y.saturating_sub(1));
             self.location.y = self.location.y.saturating_sub(1);
-            self.location.x = self.line_len(self.location.y).unwrap_or(0);
-        } else {
+        } else if self.location.x > 0 {
             self.location.x = self.location.x.saturating_sub(1);
+            self.delete(self.location);
         }
         self.scroll_location_into_view();
-        self.delete(self.location);
         self.set_redraw(true);
-        self.render()?;
+        Ok(())
+    }
+
+    pub fn handle_command(&mut self, command: EditorCommand) -> Result<(), Error> {
+        match command {
+            EditorCommand::Insert(c) => self.handle_char_insert(c)?,
+            EditorCommand::Move(direction) => self.move_caret(direction)?,
+            EditorCommand::Enter => self.handle_enter()?,
+            EditorCommand::Backspace => self.handle_backspace()?,
+            EditorCommand::Resize(size) => self.resize(size),
+            EditorCommand::Quit => {
+                unreachable!("Quit command should be handled by Editor, not View")
+            }
+        };
+
         Ok(())
     }
 
@@ -225,24 +251,24 @@ impl View {
         let Size { height, width } = self.size;
         let old_scroll_offset = self.scroll_offset;
 
-        if self.location.x >= self.scroll_offset.x + width {
-            self.scroll_offset.x = self.location.x.saturating_sub(width) + 1
+        if self.location.x >= self.scroll_offset.x.saturating_add(width) {
+            self.scroll_offset.x = self.location.x.saturating_sub(width).saturating_add(1);
         }
 
         if self.location.x < self.scroll_offset.x {
-            self.scroll_offset.x = self.location.x
+            self.scroll_offset.x = self.location.x;
         }
 
-        if self.location.y >= self.scroll_offset.y + height {
-            self.scroll_offset.y = self.location.y.saturating_sub(height) + 1
+        if self.location.y >= self.scroll_offset.y.saturating_add(height) {
+            self.scroll_offset.y = self.location.y.saturating_sub(height).saturating_add(1);
         }
 
         if self.location.y < self.scroll_offset.y {
-            self.scroll_offset.y = self.location.y
+            self.scroll_offset.y = self.location.y;
         }
 
         if old_scroll_offset != self.scroll_offset {
-            self.needs_redraw = true
+            self.needs_redraw = true;
         }
     }
 }

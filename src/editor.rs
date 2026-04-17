@@ -1,25 +1,24 @@
+mod editorcommand;
 mod terminal;
 mod view;
 
+use crate::editor::editorcommand::EditorCommand;
 use crate::editor::terminal::Terminal;
-use crate::editor::terminal::Size;
 use crate::editor::view::View;
-use crossterm::event::KeyCode::{Down, End, Home, Left, PageDown, PageUp, Right, Up};
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, read};
+use crossterm::event::{Event, read};
 use std::io::Error;
 
 pub struct Editor {
     should_quit: bool,
     view: View,
-    _terminal: Terminal,
 }
 
 impl Editor {
     pub fn new() -> Result<Self, Error> {
+        Terminal::initialize()?;
         Ok(Self {
             should_quit: false,
             view: View::default(),
-            _terminal: Terminal::new()?,
         })
     }
 
@@ -53,34 +52,40 @@ impl Editor {
 
     #[allow(clippy::needless_pass_by_value)]
     fn evaluate_event(&mut self, event: Event) -> Result<(), Error> {
-        match event {
-            Event::Key(KeyEvent {
-                code,
-                modifiers,
-                kind: KeyEventKind::Press,
-                ..
-            }) => match (code, modifiers) {
-                (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
-                    self.should_quit = true;
-                }
-                (KeyCode::Char(c), _) => self.view.handle_char_insert(c)?,
-                (Up | Down | Right | Left | Home | End | PageDown | PageUp, _) => {
-                    self.view.move_caret(code)?
-                }
-                (KeyCode::Enter, _) => self.view.handle_enter()?,
-                (KeyCode::Backspace, _) => self.view.handle_backspace()?,
-                _ => {}
-            },
-            Event::Resize(width_u16, height_u16) => {
-                #[allow(clippy::as_conversions)]
-                let height = height_u16 as usize;
-
-                #[allow(clippy::as_conversions)]
-                let width = width_u16 as usize;
-
-                self.view.resize(Size { height, width });
+        // match event {
+        //     Event::Key(KeyEvent {
+        //         code,
+        //         modifiers,
+        //         kind: KeyEventKind::Press,
+        //         ..
+        //     }) => match (code, modifiers) {
+        //         (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
+        //             self.should_quit = true;
+        //         }
+        //         (KeyCode::Char(c), _) => self.view.handle_char_insert(c)?,
+        //         (Up | Down | Right | Left | Home | End | PageDown | PageUp, _) => {
+        //             self.view.move_caret(code)?
+        //         }
+        //         (KeyCode::Enter, _) => self.view.handle_enter()?,
+        //         (KeyCode::Backspace, _) => self.view.handle_backspace()?,
+        //         _ => {}
+        //     },
+        //     Event::Resize(width_u16, height_u16) => {
+        //         #[allow(clippy::as_conversions)]
+        //         let height = height_u16 as usize;
+        //
+        //         #[allow(clippy::as_conversions)]
+        //         let width = width_u16 as usize;
+        //
+        //         self.view.resize(Size { height, width });
+        //     }
+        //     _ => {}
+        // }
+        if let Ok(command) = EditorCommand::try_from(event) {
+            match command {
+                EditorCommand::Quit => self.should_quit = true,
+                _ => self.view.handle_command(command)?,
             }
-            _ => {}
         }
         Terminal::execute()?;
         Ok(())
