@@ -5,6 +5,7 @@ use crate::editor::editorcommand::Direction::{
 use crate::editor::editorcommand::EditorCommand;
 use crate::editor::terminal::{Position, Size, Terminal};
 use buffer::Buffer;
+use std::cmp::min;
 use std::ops::DerefMut;
 use std::{io::Error, ops::Deref};
 
@@ -73,15 +74,11 @@ impl View {
         for current_row in 0..height {
             let doc_row = current_row + self.scroll_offset.y;
             if let Some(line) = self.buffer.lines.get(doc_row) {
-                // let truncated_line = if line.len() >= width {
-                //     &line[0..width]
-                // } else {
-                //     line
-                // };
-                let start = self.scroll_offset.x.min(line.len());
-                let end = (start + width).min(line.len());
+                let start = self.scroll_offset.x;
+                let end = start + width;
+                eprintln!("Rendering line {doc_row} with scroll offset {start}..{end}");
                 let visible_line = &line[start..end];
-                Self::render_line(current_row, visible_line)?;
+                Self::render_line(current_row, &visible_line)?;
             } else if current_row == vertical_center && self.buffer.is_empty() {
                 Self::render_line(current_row, &Self::build_welcome_message(width))?;
             } else {
@@ -156,7 +153,8 @@ impl View {
     // }
 
     pub fn screen_position(&self) -> Position {
-        let col = self.location.x.saturating_sub(self.scroll_offset.x);
+        let col_x = self.buffer.col_of(self.location);
+        let col = col_x.saturating_sub(self.scroll_offset.x);
         let row = self.location.y.saturating_sub(self.scroll_offset.y);
         Position::new(col, row)
     }
@@ -165,25 +163,33 @@ impl View {
         let Location { mut x, mut y } = self.location;
         let Size { height, .. } = self.size;
         match code {
-            Up => {
-                y = y.saturating_sub(1);
-                if x > self.line_len(y).unwrap_or(0) {
-                    x = self.line_len(y).unwrap_or(0);
+            Up => y = y.saturating_sub(1),
+            Down => y = y.saturating_add(1),
+            Right => {
+                let line_len = self.buffer.line_len(y).unwrap_or(0);
+                if x >= line_len && y < self.buffer.height() {
+                    x = 0;
+                    y = y.saturating_add(1)
+                } else if x < line_len {
+                    x = x.saturating_add(1);
                 }
             }
-            Down => {
-                y = y.saturating_add(1);
-                if x > self.line_len(y).unwrap_or(0) {
-                    x = self.line_len(y).unwrap_or(0);
+            Left => {
+                if x == 0 && y > 0 {
+                    x = self.buffer.line_len(y.saturating_sub(1)).unwrap_or(0);
+                    y = y.saturating_sub(1);
+                } else {
+                    x = x.saturating_sub(1)
                 }
             }
-            Right => x = x.saturating_add(1),
-            Left => x = x.saturating_sub(1),
             Home => x = 0,
             End => x = self.buffer.line_len(y).unwrap_or(0),
             PageUp => y = y.saturating_sub(height.saturating_sub(1)),
             PageDown => y = y.saturating_add(height.saturating_sub(1)),
         }
+
+        y = min(y, self.buffer.height());
+        x = self.buffer.line_len(y).unwrap_or(0).min(x);
         let location = Location::new(x, y);
         self.location = location;
 
@@ -250,13 +256,14 @@ impl View {
     fn scroll_location_into_view(&mut self) {
         let Size { height, width } = self.size;
         let old_scroll_offset = self.scroll_offset;
+        let col_x = self.buffer.col_of(self.location);
 
-        if self.location.x >= self.scroll_offset.x.saturating_add(width) {
-            self.scroll_offset.x = self.location.x.saturating_sub(width).saturating_add(1);
+        if col_x >= self.scroll_offset.x.saturating_add(width) {
+            self.scroll_offset.x = col_x.saturating_sub(width).saturating_add(1);
         }
 
-        if self.location.x < self.scroll_offset.x {
-            self.scroll_offset.x = self.location.x;
+        if col_x < self.scroll_offset.x {
+            self.scroll_offset.x = col_x;
         }
 
         if self.location.y >= self.scroll_offset.y.saturating_add(height) {

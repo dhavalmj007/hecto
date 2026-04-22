@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'TEACHING MODE REMINDER: Do not write or edit files unless the user has explicitly said \"implement it for me\" or \"write this for me\" in this message. If they have not, explain the concept and guide them to write it themselves instead.'"
+          }
+        ]
+      }
+    ]
+  }
+}
