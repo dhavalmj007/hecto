@@ -76,8 +76,7 @@ impl View {
             if let Some(line) = self.buffer.lines.get(doc_row) {
                 let start = self.scroll_offset.x;
                 let end = start + width;
-                eprintln!("Rendering line {doc_row} with scroll offset {start}..{end}");
-                let visible_line = &line[start..end];
+                let visible_line = line.get_visible_fragment(start..end);
                 Self::render_line(current_row, &visible_line)?;
             } else if current_row == vertical_center && self.buffer.is_empty() {
                 Self::render_line(current_row, &Self::build_welcome_message(width))?;
@@ -129,7 +128,7 @@ impl View {
     }
 
     pub fn delete(&mut self, location: Location) {
-        self.buffer.delete_backward(location);
+        self.buffer.delete(location);
     }
 
     pub fn insert(&mut self, location: Location, c: char) {
@@ -199,14 +198,16 @@ impl View {
 
     pub fn handle_char_insert(&mut self, c: char) -> Result<(), Error> {
         let Location { x, y } = self.location;
+        let before_line_len = self.buffer.line_len(y).unwrap_or(0);
+
         self.insert(self.location, c);
-        let new_x = x.saturating_add(1);
-        let new_y = y;
-        // Terminal::move_caret_to(Position {
-        //     col: new_x,
-        //     row: new_y,
-        // })?;
-        self.location = Location { x: new_x, y: new_y };
+        let after_line_len = self.buffer.line_len(y).unwrap_or(0);
+        let new_x = if after_line_len > before_line_len {
+            x.saturating_add(1)
+        } else {
+            x
+        };
+        self.location = Location { x: new_x, y };
         self.scroll_location_into_view();
         self.set_redraw(true);
 
@@ -215,8 +216,7 @@ impl View {
 
     pub fn handle_enter(&mut self) -> Result<(), Error> {
         self.buffer.split_line(self.location);
-        self.location.y = self.location.y.saturating_add(1);
-        self.location.x = 0;
+        self.move_caret(Right)?;
         self.scroll_location_into_view();
         self.set_redraw(true);
         Ok(())
@@ -238,12 +238,27 @@ impl View {
         Ok(())
     }
 
+    pub fn handle_delete(&mut self) -> Result<(), Error> {
+        let Location { x, y } = self.location;
+        let line_len = self.buffer.line_len(y).unwrap_or(0);
+        if x == line_len && y < self.buffer.height() {
+            self.buffer.join_line(y);
+        } else if x < line_len {
+            self.delete(self.location);
+        }
+        self.scroll_location_into_view();
+        self.set_redraw(true);
+        Ok(())
+    }
+
     pub fn handle_command(&mut self, command: EditorCommand) -> Result<(), Error> {
         match command {
             EditorCommand::Insert(c) => self.handle_char_insert(c)?,
+            EditorCommand::Tab => self.handle_char_insert('\t')?,
             EditorCommand::Move(direction) => self.move_caret(direction)?,
             EditorCommand::Enter => self.handle_enter()?,
             EditorCommand::Backspace => self.handle_backspace()?,
+            EditorCommand::Delete => self.handle_delete()?,
             EditorCommand::Resize(size) => self.resize(size),
             EditorCommand::Quit => {
                 unreachable!("Quit command should be handled by Editor, not View")

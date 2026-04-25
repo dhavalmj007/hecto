@@ -11,14 +11,14 @@ use crate::editor::view::Location;
 
 #[derive(Debug)]
 enum CharWidth {
-    Zero,
     Half,
     Full,
 }
 
 #[derive(Debug)]
 struct GraphemesEntry {
-    _grapheme: String,
+    grapheme: String,
+    replacement: Option<char>,
     rendered_width: CharWidth,
     byte_start: usize,
     byte_end: usize,
@@ -40,18 +40,45 @@ impl Line {
 
     fn create_graphemes(s: &str, byte_offset: usize) -> Vec<GraphemesEntry> {
         s.grapheme_indices(true)
-            .map(|(start, g)| GraphemesEntry {
-                _grapheme: g.to_string(),
-                rendered_width: match g.width() {
-                    0 => CharWidth::Zero,
-                    1 => CharWidth::Half,
-                    2 => CharWidth::Full,
-                    _ => CharWidth::Half, // Default to half for unexpected widths
-                },
-                byte_start: start + byte_offset,
-                byte_end: start + byte_offset + g.len(),
+            .map(|(start, g)| {
+                let replacement = Self::replacement_char(g);
+                GraphemesEntry {
+                    grapheme: g.to_string(),
+                    replacement,
+                    rendered_width: if replacement.is_some() {
+                        CharWidth::Half
+                    } else {
+                        match g.width() {
+                            2 => CharWidth::Full,
+                            _ => CharWidth::Half, // Default to half for unexpected widths
+                        }
+                    },
+                    byte_start: start + byte_offset,
+                    byte_end: start + byte_offset + g.len(),
+                }
             })
             .collect()
+    }
+
+    fn replacement_char(g: &str) -> Option<char> {
+        match g {
+            " " => None,
+            "\t" => Some(' '),
+            _ if g.width() > 0 && g.trim().is_empty() => Some('␣'),
+            _ if {
+                let mut chars = g.chars();
+                if let Some(ch) = chars.next() {
+                    ch.is_control() && chars.next().is_none()
+                } else {
+                    false
+                }
+            } =>
+            {
+                Some('▯')
+            }
+            _ if g.width() == 0 => Some('·'),
+            _ => None,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -61,7 +88,6 @@ impl Line {
     pub fn col_of(&self, grapheme_index: usize) -> usize {
         self.graphemes[..grapheme_index].iter().fold(0, |acc, g| {
             let width = match g.rendered_width {
-                CharWidth::Zero => 0,
                 CharWidth::Half => 1,
                 CharWidth::Full => 2,
             };
@@ -83,7 +109,8 @@ impl Line {
 
     fn remove(&mut self, at: usize) {
         let GraphemesEntry {
-            _grapheme: _,
+            grapheme: _,
+            replacement: _,
             rendered_width: _,
             byte_start,
             byte_end,
@@ -112,6 +139,46 @@ impl Line {
             Line::new("")
         }
     }
+
+    pub fn get_visible_fragment(&self, range: Range<usize>) -> String {
+        if range.is_empty() || self.graphemes.is_empty() {
+            return String::new();
+        }
+
+        let mut result = String::new();
+        let mut current_col = 0;
+
+        for entry in &self.graphemes {
+            let width = match entry.rendered_width {
+                CharWidth::Half => 1,
+                CharWidth::Full => 2,
+            };
+            if current_col + width <= range.start {
+                current_col += width;
+                continue;
+            }
+
+            if current_col >= range.end {
+                break;
+            }
+
+            if current_col < range.start {
+                result.push(' ');
+            } else if current_col + width > range.end {
+                result.push(' ');
+            } else {
+                if let Some(ch) = entry.replacement {
+                    result.push(ch);
+                } else {
+                    result.push_str(&entry.grapheme);
+                }
+            }
+
+            current_col += width;
+        }
+
+        result
+    }
 }
 
 impl Index<Range<usize>> for Line {
@@ -120,33 +187,32 @@ impl Index<Range<usize>> for Line {
         if range.is_empty() || self.graphemes.is_empty() {
             return "";
         }
-        // assert!(range.end <= self.graphemes.len(), "Range out of bounds");
 
         let grapheme_start = self
             .graphemes
             .iter()
             .scan(0, |col, g| {
                 *col += match g.rendered_width {
-                    CharWidth::Zero => 0,
                     CharWidth::Half => 1,
                     CharWidth::Full => 2,
                 };
                 Some(*col)
             })
-            .position(|cum_col| cum_col > range.start).unwrap_or(0);
+            .position(|cum_col| cum_col > range.start)
+            .unwrap_or(0);
 
         let grapheme_end = self
             .graphemes
             .iter()
             .scan(0, |col, g| {
                 *col += match g.rendered_width {
-                    CharWidth::Zero => 0,
                     CharWidth::Half => 1,
                     CharWidth::Full => 2,
                 };
                 Some(*col)
             })
-            .position(|cum_col| cum_col >= range.end).unwrap_or(self.len().saturating_sub(1));
+            .position(|cum_col| cum_col >= range.end)
+            .unwrap_or(self.len().saturating_sub(1));
 
         let byte_start = self.graphemes[grapheme_start].byte_start;
         let byte_end = self.graphemes[grapheme_end].byte_end;
@@ -173,7 +239,7 @@ impl Buffer {
         Ok(Self { lines: vec })
     }
 
-    pub fn delete_backward(&mut self, location: Location) {
+    pub fn delete(&mut self, location: Location) {
         if let Some(line) = self.lines.get_mut(location.y)
             && location.x < line.len()
         {

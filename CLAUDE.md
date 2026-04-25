@@ -11,8 +11,8 @@ When I ask for 'guided learning', 'explain', or am working through tutorial/assi
 
 # Current status
 - Chapter: 4 — "Introduction to Graphemes"
-- Last completed: Assignment 13 (Support Character Width) — CharWidth enum, col_of, column-based scroll_offset done
-- Next: Assignment 14
+- Last completed: Assignment 18 (Tab + Enter) — grapheme-aware insert, delete, backspace, line join, line split, tab as \t all working
+- Next: Assignment 19
 - (I update this as I progress. Ask if it seems stale.)
 
 # Hard rules
